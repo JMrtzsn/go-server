@@ -8,20 +8,39 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	listenAddr := setAddress()
 	logger := initLogger()
+	loadEnv()
+
+	binance := Binance{}
+	if err := binance.init(); err != nil{
+		logger.Fatalf(err.Error())
+	}
 
 	ctrl := &controller{
 		logger:        logger,
 		nextRequestID: func() string { return strconv.FormatInt(time.Now().UnixNano(), 36) },
+		client:        binance,
 	}
 
 	router := http.NewServeMux()
 	router.HandleFunc("/", ctrl.index)
 	router.HandleFunc("/health", ctrl.health)
+	router.HandleFunc("/marketOrder", ctrl.marketOrder)
+	router.HandleFunc("/cancelOrder", ctrl.cancelOrder)
+	router.HandleFunc("/orderStatus", ctrl.orderStatus)
+	router.HandleFunc("/candles", ctrl.symbolCandles)
+	router.HandleFunc("/tickerPrices", ctrl.tickerPrices)
+	router.HandleFunc("/accountBalance", ctrl.accountBalance)
+	router.HandleFunc("/symbolDepth", ctrl.symbolDepth)
+	router.HandleFunc("/depthWebSocket", ctrl.depthWebSocket)
+
+	// TODO: need to add tooManyRequest middleware handler, as well as failover handler,
+	// TODO: the server should try everything it can to serve the request?
 
 	server := &http.Server{
 		Addr:         listenAddr,
@@ -41,6 +60,13 @@ func main() {
 	}
 	<-ctx.Done()
 	logger.Printf("Server stopped\n")
+}
+
+func loadEnv() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
 }
 
 func setAddress() string {
