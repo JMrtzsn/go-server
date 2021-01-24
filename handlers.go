@@ -12,10 +12,20 @@ import (
 	"time"
 )
 
+type middleware func(http.Handler) http.Handler
+type middlewares []middleware
+
+// recursive function that adds the Middleware flow to the different endpoints?
+func (mws middlewares) Apply(hdlr http.Handler) http.Handler {
+	if len(mws) == 0 {
+		return hdlr
+	}
+	return mws[1:].Apply(mws[0](hdlr))
+}
 // Ensure the handlers implement the required interfaces/types at compile time
 var (
 	_ http.Handler = http.HandlerFunc((&controller{}).index)
-	_ http.Handler = http.HandlerFunc((&controller{}).healthz)
+	_ http.Handler = http.HandlerFunc((&controller{}).health)
 	_ middleware   = (&controller{}).logging
 	_ middleware   = (&controller{}).tracing
 )
@@ -61,7 +71,7 @@ func (c *controller) index(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "Hello, World!\n")
 }
 
-func (c *controller) healthz(w http.ResponseWriter, req *http.Request) {
+func (c *controller) health(w http.ResponseWriter, req *http.Request) {
 	if h := atomic.LoadInt64(&c.healthy); h == 0 {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {

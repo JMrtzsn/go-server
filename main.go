@@ -10,19 +10,6 @@ import (
 	"time"
 )
 
-type middleware func(http.Handler) http.Handler
-type middlewares []middleware
-
-// method assigned to middlewares slice
-func (mws middlewares) apply(hdlr http.Handler) http.Handler {
-	if len(mws) == 0 {
-		return hdlr
-	}
-	return mws[1:].apply(mws[0](hdlr))
-}
-
-
-
 func main() {
 	listenAddr := setAddress()
 	logger := initLogger()
@@ -34,7 +21,7 @@ func main() {
 
 	router := http.NewServeMux()
 	router.HandleFunc("/", ctrl.index)
-	router.HandleFunc("/healthz", ctrl.healthz)
+	router.HandleFunc("/health", ctrl.health)
 
 	server := &http.Server{
 		Addr:         listenAddr,
@@ -60,7 +47,7 @@ func setAddress() string {
 	if len(os.Args) == 2 {
 		return os.Args[1]
 	}
-	return ":5000"
+	return ":8080"
 }
 
 func initLogger() *log.Logger {
