@@ -9,11 +9,48 @@ import (
 	"sync/atomic"
 	"time"
 	"github.com/joho/godotenv"
+	"cloud.google.com/go/compute/metadata"
 )
 
 func main() {
-	listenAddr := setAddress()
-	logger := initLogger()
+	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
+	logger.Printf("Server is starting...")
+	// Initialize template parameters.
+	service := os.Getenv("K_SERVICE")
+	if service == "" {
+		service = "???"
+	}
+
+	revision := os.Getenv("K_REVISION")
+	if revision == "" {
+		revision = "???"
+	}
+
+	project := os.Getenv("GOOGLE_CLOUD_PROJECT")
+
+	// Environment variable GOOGLE_CLOUD_PROJECT is only set locally.
+	// On Cloud Run, strip the timestamp prefix from log entries.
+	if project == "" {
+		log.SetFlags(0)
+	}
+
+	// Only attempt to check the Cloud Run metadata server if it looks like
+	// the service is deployed to Cloud Run or GOOGLE_CLOUD_PROJECT not already set.
+	if project == "" || service != "???" {
+		var err error
+		if project, err = metadata.ProjectID(); err != nil {
+			logger.Printf("metadata.ProjectID: Cloud Run metadata server: %v", err)
+		}
+	}
+	if project == "" {
+		project = "???"
+	}
+
+	// PORT environment variable is provided by Cloud Run.
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 	loadEnv()
 
 	binance := Binance{}
@@ -33,17 +70,13 @@ func main() {
 	router.HandleFunc("/marketOrder", ctrl.marketOrder)
 	router.HandleFunc("/cancelOrder", ctrl.cancelOrder)
 	router.HandleFunc("/orderStatus", ctrl.orderStatus)
-	router.HandleFunc("/candles", ctrl.symbolCandles)
+	router.HandleFunc("/candles", ctrl.candles)
 	router.HandleFunc("/tickerPrices", ctrl.tickerPrices)
 	router.HandleFunc("/accountBalance", ctrl.accountBalance)
 	router.HandleFunc("/symbolDepth", ctrl.symbolDepth)
-	router.HandleFunc("/depthWebSocket", ctrl.depthWebSocket)
-
-	// TODO: need to add tooManyRequest middleware handler, as well as failover handler,
-	// TODO: the server should try everything it can to serve the request?
 
 	server := &http.Server{
-		Addr:         listenAddr,
+		Addr:         ":"+port,
 		Handler:      (middlewares{ctrl.tracing, ctrl.logging}).apply(router),
 		ErrorLog:     logger,
 		ReadTimeout:  5 * time.Second,
@@ -52,11 +85,11 @@ func main() {
 	}
 	ctx := ctrl.shutdown(context.Background(), server)
 
-	logger.Printf("Server is ready to handle requests at %q\n", listenAddr)
+	logger.Printf("Server is ready to handle requests at %q\n", port)
 	atomic.StoreInt64(&ctrl.healthy, time.Now().UnixNano())
 
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		logger.Fatalf("Could not listen on %q: %s\n", listenAddr, err)
+		logger.Fatalf("Could not listen on %q: %s\n", port, err)
 	}
 	<-ctx.Done()
 	logger.Printf("Server stopped\n")
@@ -68,18 +101,4 @@ func loadEnv() {
 		log.Fatalf("Error loading .env file")
 	}
 }
-
-func setAddress() string {
-	if len(os.Args) == 2 {
-		return os.Args[1]
-	}
-	return ":8080"
-}
-
-func initLogger() *log.Logger {
-	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
-	logger.Printf("Server is starting...")
-	return logger
-}
-
 

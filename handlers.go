@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/adshao/go-binance/v2"
 	"log"
 	"net/http"
 	"os"
@@ -38,7 +37,7 @@ type controller struct {
 	logger        *log.Logger
 	nextRequestID func() string
 	healthy       int64
-	client        binance.Client
+	client        Binance
 }
 
 func (c *controller) shutdown(ctx context.Context, server *http.Server) context.Context {
@@ -111,7 +110,7 @@ func (c *controller) tracing(hdlr http.Handler) http.Handler {
 // TODO: standardize the json convertion?
 
 func (c *controller) marketOrder(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+	if !isPostReq(w, req){
 		return
 	}
 
@@ -119,7 +118,7 @@ func (c *controller) marketOrder(w http.ResponseWriter, req *http.Request) {
 	order := req.Form.Get("order")
 	quantity := req.Form.Get("quantity")
 	if isEmpty(symbol, order, quantity) {
-		http.Error(w, "Invalid Input, symbol, order, quantity must be provided", http.StatusBadRequest)
+		http.Error(w, "Invalid Input: symbol, order, quantity must be provided", http.StatusBadRequest)
 		return
 	}
 
@@ -133,14 +132,15 @@ func (c *controller) marketOrder(w http.ResponseWriter, req *http.Request) {
 }
 
 func (c *controller) orderStatus(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+	if !isPostReq(w, req){
 		return
 	}
 
 	symbol := req.Form.Get("symbol")
 	orderInput := req.Form.Get("orderId")
 	if isEmpty(symbol, orderInput) {
-		http.Error(w, "Invalid Input, symbol, order, quantity must be provided", http.StatusBadRequest)
+		http.Error(w, "Invalid Input: symbol, orderId must be provided", http.StatusBadRequest)
+		return
 	}
 
 	orderId, err := strconv.Atoi(orderInput)
@@ -157,32 +157,111 @@ func (c *controller) orderStatus(w http.ResponseWriter, req *http.Request) {
 
 
 func (c *controller) cancelOrder(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+	if !isPostReq(w, req){
 		return
 	}
-	writeToJson(w, order)
+	symbol := req.Form.Get("symbol")
+	orderInput := req.Form.Get("orderId")
+	if isEmpty(symbol, orderInput) {
+		http.Error(w, "Invalid Input: symbol, orderId must be provided", http.StatusBadRequest)
+		return
+	}
+
+	orderId, err := strconv.Atoi(orderInput)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	status, err := c.client.cancelOrder(int64(orderId), symbol)
+	if err != nil {
+		// TODO should "handle" order execution
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeToJson(w, status)
+}
+
+func (c *controller) openOrders(w http.ResponseWriter, req *http.Request) {
+	if !isPostReq(w, req){
+		return
+	}
+	symbol := req.Form.Get("symbol")
+	if isEmpty(symbol) {
+		http.Error(w, "Invalid Input: symbol must be provided", http.StatusBadRequest)
+		return
+	}
+
+	orders, err := c.client.openOrders(symbol)
+	if err != nil {
+		// TODO should "handle" order execution
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeToJson(w, orders)
 }
 
 func (c *controller) tickerPrices(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+	if !isPostReq(w, req){
+		return
+	}
+	symbol := req.Form.Get("symbol")
+	if isEmpty(symbol) {
+		http.Error(w, "Invalid Input: symbol must be provided", http.StatusBadRequest)
 		return
 	}
 
+	prices, err := c.client.tickerPrices(symbol)
+	if err != nil {
+		// TODO should "handle" order execution
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeToJson(w, prices)
 }
 
-func (c *controller) symbolCandles(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+// TODO probable main endpoint for clients as a start
+func (c *controller) candles(w http.ResponseWriter, req *http.Request) {
+	if !isPostReq(w, req){
+		return
+	}
+
+	symbol := req.Form.Get("symbol")
+	interval := req.Form.Get("interval")
+	if isEmpty(symbol, interval) {
+		http.Error(w, "Invalid Input: symbol, interval must be provided", http.StatusBadRequest)
+		c.logger.Println(req.Form)
+		return
+	}
+
+	candles, err := c.client.candles(symbol, interval)
+	if err != nil {
+		// TODO should "handle" order execution
+		c.logger.Println(err.Error())
+		http.Error(w, err.Error(), http.StatusFailedDependency)
 		return
 	}
 	writeToJson(w, candles)
 }
 
 func (c *controller) symbolDepth(w http.ResponseWriter, req *http.Request) {
-	if !POST(w, req){
+	if !isPostReq(w, req){
 		return
 	}
-	writeToJson(w, depth)a
+	symbol := req.Form.Get("symbol")
+	if isEmpty(symbol) {
+		http.Error(w, "Invalid Input: symbol must be provided", http.StatusBadRequest)
+		return
+	}
+
+	depth, err := c.client.symbolDepth(symbol)
+	if err != nil {
+		// TODO should "handle" order execution
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeToJson(w, depth)
 }
 
 
@@ -190,6 +269,7 @@ func (c *controller) accountBalance(w http.ResponseWriter, req *http.Request) {
 	balance, err  := c.client.accountBalance()
 	if err != nil{
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	writeToJson(w, balance)
 }
@@ -204,7 +284,7 @@ func isEmpty(ss ...string) bool {
 }
 
 
-func POST(w http.ResponseWriter, req *http.Request) bool {
+func isPostReq(w http.ResponseWriter, req *http.Request) bool {
 	if req.Method != "POST" {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return false

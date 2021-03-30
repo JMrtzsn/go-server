@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"github.com/adshao/go-binance/v2"
 	"os"
-	"time"
 )
 
 type Binance struct {
+	Client binance.Client
 }
 //TODO create struct
 
@@ -23,7 +23,7 @@ func (exchange *Binance) init() error {
 		return errors.New("failed to load BINANCE_SECRET from .env")
 	}
 	client := *binance.NewClient(apiKey, apiSecret)
-	exchange.client = client
+	exchange.Client = client
 	return nil
 }
 
@@ -34,11 +34,12 @@ func (exchange *Binance) marketOrder(symbol string, order string, quantity strin
 	if err != nil {
 		return nil, err
 	}
-	result, err := exchange.client.NewCreateOrderService().
+	result, err := exchange.Client.NewCreateOrderService().
 		Symbol(symbol).
 		Side(side).
 		Type(binance.OrderTypeMarket).
-		Quantity(quantity).Do(context.Background())
+		Quantity(quantity).
+		Do(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func setSideType(side string) (binance.SideType, error) {
 }
 
 func (exchange *Binance) orderStatus(orderId int64, symbol string) (*binance.Order, error) {
-	order, err := exchange.client.NewGetOrderService().Symbol(symbol).
+	order, err := exchange.Client.NewGetOrderService().Symbol(symbol).
 		OrderID(orderId).Do(context.Background())
 	if err != nil {
 		return nil, err
@@ -67,7 +68,7 @@ func (exchange *Binance) orderStatus(orderId int64, symbol string) (*binance.Ord
 }
 
 func (exchange *Binance) cancelOrder(orderId int64, symbol string) (*binance.CancelOrderResponse, error) {
-	order, err := exchange.client.NewCancelOrderService().Symbol(symbol).
+	order, err := exchange.Client.NewCancelOrderService().Symbol(symbol).
 		OrderID(orderId).Do(context.Background())
 	if err != nil {
 		return nil, err
@@ -76,7 +77,7 @@ func (exchange *Binance) cancelOrder(orderId int64, symbol string) (*binance.Can
 }
 
 func (exchange *Binance) openOrders(symbol string) ([]*binance.Order, error) {
-	order, err := exchange.client.NewListOpenOrdersService().Symbol(symbol).
+	order, err := exchange.Client.NewListOpenOrdersService().Symbol(symbol).
 		Do(context.Background())
 	if err != nil {
 		return nil, err
@@ -84,8 +85,8 @@ func (exchange *Binance) openOrders(symbol string) ([]*binance.Order, error) {
 	return order, nil
 }
 
-func (exchange *Binance) tickerPrices() ([]*binance.SymbolPrice, error) {
-	order, err := exchange.client.NewListPricesService().
+func (exchange *Binance) tickerPrices(symbol string) ([]*binance.SymbolPrice, error) {
+	order, err := exchange.Client.NewListPricesService().Symbol(symbol).
 		Do(context.Background())
 	if err != nil {
 		return nil, err
@@ -94,17 +95,18 @@ func (exchange *Binance) tickerPrices() ([]*binance.SymbolPrice, error) {
 }
 
 
-func (exchange *Binance) symbolCandles(symbol string, interval string) ([]*binance.Kline, error) {
-	candles, err := exchange.client.NewKlinesService().Symbol(symbol).
+func (exchange *Binance) candles(symbol string, interval string) ([]*binance.Kline, error) {
+	candles, err := exchange.Client.NewKlinesService().Symbol(symbol).
 		Interval(interval).Do(context.Background())
 	if err != nil {
+
 		return nil, err
 	}
 	return candles, nil
 }
 
 func (exchange *Binance) accountBalance() ([]binance.Balance, error) {
-	res, err := exchange.client.NewGetAccountService().Do(context.Background())
+	res, err := exchange.Client.NewGetAccountService().Do(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -113,34 +115,10 @@ func (exchange *Binance) accountBalance() ([]binance.Balance, error) {
 
 
 func (exchange *Binance) symbolDepth(symbol string) (*binance.DepthResponse, error) {
-	order, err := exchange.client.NewDepthService().Symbol(symbol).
+	order, err := exchange.Client.NewDepthService().Symbol(symbol).
 		Do(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	return order, nil
-}
-
-// TODO need to be setup and passed to PYTHON clients though a websocket?
-func (exchange *Binance) depthWebSocket(symbol string) chan struct{} {
-	wsDepthHandler := func(event *binance.WsDepthEvent) {
-		// TODO should return data through api ?
-		fmt.Println(event)
-	}
-	errHandler := func(err error) {
-		// TODO should return data through api ?
-		fmt.Println(err)
-	}
-	doneC, stopC, err := binance.WsDepthServe(symbol, wsDepthHandler, errHandler)
-	if err != nil {
-		return nil
-	}
-	// use stopC to exit
-	go func() {
-		time.Sleep(5 * time.Second)
-		stopC <- struct{}{}
-	}()
-	// remove this if you do not want to be blocked here
-	<-doneC
-	return nil
 }

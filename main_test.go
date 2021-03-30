@@ -1,26 +1,32 @@
 package main
-import (
-"io/ioutil"
-"net/http"
-"os"
-"strings"
-"testing"
 
-retry "github.com/hashicorp/go-retryablehttp"
+import (
+	"io/ioutil"
+	"net/http"
+	"os"
+	"testing"
+
+	retry "github.com/hashicorp/go-retryablehttp"
 )
 
-func TestService(t *testing.T) {
-	port := os.Getenv("PORT")
+var port string
+var url string
+var bodytype = "application/x-www-form-urlencoded"
+
+// Pre test setup
+func init(){
+	port = os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	url := os.Getenv("SERVICE_URL")
+	url = os.Getenv("SERVICE_URL")
 	if url == "" {
 		url = "http://localhost:" + port
 	}
+}
 
-	// TODO setup integration test
+func TestService(t *testing.T) {
 	resp, err := retry.Get(url + "/")
 	if err != nil {
 		t.Fatalf("retry.Get: %v", err)
@@ -30,14 +36,66 @@ func TestService(t *testing.T) {
 		t.Errorf("HTTP Response: got %q, want %q", got, http.StatusOK)
 	}
 
-	out, err := ioutil.ReadAll(resp.Body)
+	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("ioutil.ReadAll: %v", err)
 	}
+}
+func TestOpenOrders(t *testing.T) {
+	resp, err := retry.Get(url + "/openOrders")
+	if err != nil {
+		t.Fatalf("retry.Get: %v", err)
+	}
 
-	want := "Congratulations, you successfully deployed a container image to Cloud Run"
-	if !strings.Contains(string(out), want) {
-		t.Errorf("HTTP Response: body does not include %q", want)
+	if got := resp.StatusCode; got != http.StatusOK {
+		t.Errorf("HTTP Response: got %q, want %q", got, http.StatusOK)
+	}
+
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ioutil.ReadAll: %v", err)
+	}
+}
+func TestCandles(t *testing.T) {
+	values := make(map[string][]string)
+	values["symbol"] = []string{"BTCUSDT"}
+	values["interval"] = []string{"1h"}
+
+	resp, err := retry.PostForm(url + "/candles", values)
+	if err != nil {
+		t.Fatalf("retry.Get: %v", err)
+	}
+
+	if got := resp.StatusCode; got != http.StatusOK {
+		t.Errorf("HTTP Response: got %v, want %v", got, http.StatusOK)
+	}
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ioutil.ReadAll: %v", err)
+	}
+	if data != nil {
+		t.Fatalf("ioutil.ReadAll: %v", err)
 	}
 }
 
+
+func TestAccountBalance(t *testing.T) {
+
+	resp, err := retry.Get(url + "/accountBalance")
+	if err != nil {
+		t.Fatalf("retry.Get: %v", err)
+	}
+
+	if got := resp.StatusCode; got != http.StatusOK {
+		t.Errorf("HTTP Response: got %v, want %v", got, http.StatusOK)
+	}
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ioutil.ReadAll: %v", err)
+	}
+	if data != nil {
+		t.Fatalf("ioutil.ReadAll: %v", err)
+	}
+}

@@ -1,0 +1,20 @@
+- Implement client functionality to handlers
+    - write integration tests for endpoints. (cont: running to validate service)
+- start thinking on algo to server IPC / comms
+- cloud SQL postegress storage
+- order manager?
+- portfolio manager?
+- failover handler?
+- Python client
+    - Value assignment (100 dollar)
+    - effiency calculator
+- Backtester
+- ML lib / framework stuff
+
+
+
+Design Decisions:
+- I will start by creating a microservice approach
+    - golang webserver, handles binance comms, order management, etc
+    - python algo executioners, feeds on data streams, sends buy / sell commands
+- Why: Learning microservices, golang webservice, postgres, designing and creating my own system
